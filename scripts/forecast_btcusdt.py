@@ -27,6 +27,7 @@ from model import Kronos, KronosPredictor, KronosTokenizer
 
 BINANCE_KLINES_URL = "https://api.binance.com/api/v3/klines"
 OUTPUT_DIR = PROJECT_ROOT / "outputs"
+SINGAPORE_TIMEZONE = "Asia/Singapore"
 SUPPORTED_INTERVALS = {
     "1m": pd.Timedelta(minutes=1),
     "3m": pd.Timedelta(minutes=3),
@@ -182,11 +183,13 @@ def format_forecast(prediction: pd.DataFrame) -> pd.DataFrame:
             "volume": "pred_volume",
         }
     )
+    output["timestamp_sgt"] = to_timezone(output["timestamp"], SINGAPORE_TIMEZONE)
     output["scenario"] = "base"
     output["confidence_note"] = "single_path_forecast_only"
     return output[
         [
             "timestamp",
+            "timestamp_sgt",
             "pred_open",
             "pred_high",
             "pred_low",
@@ -198,29 +201,38 @@ def format_forecast(prediction: pd.DataFrame) -> pd.DataFrame:
     ]
 
 
-def save_plot(
+def to_timezone(timestamps: pd.Series, timezone: str) -> pd.Series:
+    """Convert UTC or timezone-aware timestamps to the requested timezone."""
+    return pd.to_datetime(timestamps, utc=True).dt.tz_convert(timezone)
+
+
+def build_forecast_figure(
     history: pd.DataFrame,
     forecast: pd.DataFrame,
     symbol: str,
-    output_path: Path,
-) -> None:
+    timezone: str = "UTC",
+    title: str | None = None,
+) -> plt.Figure:
+    history_timestamps = to_timezone(history["timestamp"], timezone)
+    forecast_timestamps = to_timezone(forecast["timestamp"], timezone)
+
     fig, ax = plt.subplots(figsize=(12, 6))
     ax.plot(
-        history["timestamp"],
+        history_timestamps,
         history["close"],
         label="Historical",
         color="#2563eb",
         linewidth=1.5,
     )
     ax.plot(
-        forecast["timestamp"],
+        forecast_timestamps,
         forecast["pred_close"],
         label="Forecast",
         color="#dc2626",
         linewidth=1.8,
     )
-    ax.set_title(f"{symbol.upper()} Kronos Forecast")
-    ax.set_xlabel("Timestamp (UTC)")
+    ax.set_title(title or f"{symbol.upper()} Kronos Forecast")
+    ax.set_xlabel(f"Timestamp ({timezone})")
     ax.set_ylabel("Close Price")
     ax.grid(alpha=0.25)
     ax.legend()
@@ -232,6 +244,18 @@ def save_plot(
         fontsize=9,
     )
     fig.tight_layout(rect=(0, 0.04, 1, 1))
+    return fig
+
+
+def save_plot(
+    history: pd.DataFrame,
+    forecast: pd.DataFrame,
+    symbol: str,
+    output_path: Path,
+    timezone: str = "UTC",
+    title: str | None = None,
+) -> None:
+    fig = build_forecast_figure(history, forecast, symbol, timezone, title)
     fig.savefig(output_path, dpi=160)
     plt.close(fig)
 
@@ -276,5 +300,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-
